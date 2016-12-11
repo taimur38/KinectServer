@@ -7,7 +7,11 @@
         mc:Ignorable="d"
         Title="MainWindow" Height="1080" Width="1920">
     <Grid>
-        <Button Name="Bass" Content="Bass" Click="Bass_Click" Visibility="Visible"/>
-        <Image Name="DisplayImage" Visibility="Visible" Stretch="Uniform"/>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="70" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+        <Button Grid.Row="0" Name="Bass" Content="Toggle Bass" Click="Bass_Click" Visibility="Visible" Width="400"/>
+        <Image Grid.Row="1" Name="DisplayImage" Visibility="Visible" Stretch="Uniform"/>
     </Grid>
 </Window>
