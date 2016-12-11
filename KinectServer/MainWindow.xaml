@@ -5,8 +5,9 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:KinectServer"
         mc:Ignorable="d"
-        Title="MainWindow" Height="350" Width="525">
+        Title="MainWindow" Height="1080" Width="1920">
     <Grid>
-        
+        <Button Name="Bass" Content="Bass" Click="Bass_Click" Visibility="Visible"/>
+        <Image Name="DisplayImage" Visibility="Visible" Stretch="Uniform"/>
     </Grid>
 </Window>
