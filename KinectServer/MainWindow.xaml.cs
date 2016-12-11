@@ -29,11 +29,15 @@ namespace KinectServer
 
     public enum ViewMode
     {
-        Stripes
+       Zones,
+       BodyMask 
     }
 
     public partial class MainWindow : Window
     {
+
+        public ViewMode CurrentViewMode = ViewMode.Zones;
+
         public KinectSensor sensor = null;
         IList<Body> bodies = null;
 
@@ -46,12 +50,17 @@ namespace KinectServer
         byte[] biFrameData;
         FrameDescription biFrameDescription = null;
 
+        byte[] colorFrameData;
+        DepthSpacePoint[] colorDepthPoints;
+
         WriteableBitmap bitmap = null;
 
         int offset = 0;
         int zones = 4;
         int bandWidth = 50;
         bool BassModifier = true;
+
+        static Dictionary<int, RGBA> depthColorMap;
 
         public MainWindow()
         {
@@ -96,6 +105,7 @@ namespace KinectServer
             }
             */
 
+            depthColorMap = new Dictionary<int, RGBA>();
             sensor = KinectSensor.GetDefault();
             sensor.Open();
             this.bodies = new Body[sensor.BodyFrameSource.BodyCount];
@@ -114,6 +124,13 @@ namespace KinectServer
             biFrameDescription = sensor.BodyIndexFrameSource.FrameDescription;
             biReader.FrameArrived += BiReader_FrameArrived;
             biFrameData = new byte[biFrameDescription.Width * biFrameDescription.Height];
+
+            var colorReader = sensor.ColorFrameSource.OpenReader();
+            colorReader.FrameArrived += ColorReader_FrameArrived;
+            var colorDescrip = sensor.ColorFrameSource.FrameDescription;
+            colorFrameData = new byte[colorDescrip.LengthInPixels * 4];
+            colorDepthPoints = new DepthSpacePoint[colorDescrip.LengthInPixels];
+
 
             var rand = new Random();
 
@@ -141,12 +158,30 @@ namespace KinectServer
 
         }
 
+        #region FrameArrivals
+
+        private void ColorReader_FrameArrived(object sender, ColorFrameArrivedEventArgs e)
+        {
+            using(var frame = e.FrameReference.AcquireFrame())
+            {
+                if (frame == null)
+                    return;
+
+                this.sensor.CoordinateMapper.MapColorFrameToDepthSpace(depthData, colorDepthPoints);
+                frame.CopyConvertedFrameDataToArray(this.colorFrameData, ColorImageFormat.Bgra);
+
+                if(CurrentViewMode == ViewMode.BodyMask)
+                    DrawGlitchyBodyMask();
+            }
+        }
+
         private void BiReader_FrameArrived(object sender, BodyIndexFrameArrivedEventArgs e)
         {
             using(var frame = e.FrameReference.AcquireFrame())
             {
                 if (frame == null)
                     return;
+
                 var frameDescription = frame.FrameDescription;
                 frame.CopyFrameDataToArray(biFrameData);
             }
@@ -177,111 +212,8 @@ namespace KinectServer
                 minDepth = depthFrame.DepthMinReliableDistance;
                 maxDepth = depthFrame.DepthMaxReliableDistance;
 
-                int colorPixelIndex = 0;
-                int mapDepthToByte = maxDepth / 256;
-
-                for (int i = 0; i < this.depthData.Length; i++)
-                {
-                    ushort depth = depthData[i];
-
-                    int intensity = depth >= 0 && depth <= maxDepth ? depth / mapDepthToByte : 0;
-
-
-                    depth = depth >= 0 && depth <= maxDepth ? depth : (ushort)0;
-                    int zone = depth / bandWidth;
-
-                    if(biFrameData[i] < (byte)bodies.Count)
-                    {
-                        if(!BassModifier)
-                        {
-                            switch ((zone % zones + offset) % zones)
-                            {
-                                case 0:
-                                    this.depthPixels[colorPixelIndex++] = (byte)(10);
-                                    this.depthPixels[colorPixelIndex++] = (byte)(200);
-                                    this.depthPixels[colorPixelIndex++] = (byte)(40);
-                                    break;
-                                case 1:
-                                    this.depthPixels[colorPixelIndex++] = (byte)(200);
-                                    this.depthPixels[colorPixelIndex++] = (byte)(200);
-                                    this.depthPixels[colorPixelIndex++] = (byte)(40);
-                                    break;
-                                case 2:
-                                    this.depthPixels[colorPixelIndex++] = (byte)0;
-                                    this.depthPixels[colorPixelIndex++] = (byte)10;
-                                    this.depthPixels[colorPixelIndex++] = (byte)240;
-                                    break;
-                                case 3:
-                                    this.depthPixels[colorPixelIndex++] = (byte)10;
-                                    this.depthPixels[colorPixelIndex++] = (byte)200;
-                                    this.depthPixels[colorPixelIndex++] = (byte)200;
-                                    break;
-                                case 4:
-                                    this.depthPixels[colorPixelIndex++] = (byte)0;
-                                    this.depthPixels[colorPixelIndex++] = (byte)0;
-                                    this.depthPixels[colorPixelIndex++] = (byte)0;
-                                    break;
-                            }
-                        }
-                        else
-                        {
-                            this.depthPixels[colorPixelIndex++] = (byte)0;
-                            this.depthPixels[colorPixelIndex++] = (byte)0;
-                            this.depthPixels[colorPixelIndex++] = (byte)0;
-                        }
-                    }
-                    else
-                    {
-                        if(!BassModifier)
-                        {
-                            this.depthPixels[colorPixelIndex++] = (byte)intensity;
-                            this.depthPixels[colorPixelIndex++] = (byte)intensity;
-                            this.depthPixels[colorPixelIndex++] = (byte)intensity;
-                        }
-                        else
-                        {
-                            switch ((zone % zones + offset) % zones)
-                            {
-                                case 0:
-                                    this.depthPixels[colorPixelIndex++] = (byte)(10);
-                                    this.depthPixels[colorPixelIndex++] = (byte)(200);
-                                    this.depthPixels[colorPixelIndex++] = (byte)(40);
-                                    break;
-                                case 1:
-                                    this.depthPixels[colorPixelIndex++] = (byte)(200);
-                                    this.depthPixels[colorPixelIndex++] = (byte)(200);
-                                    this.depthPixels[colorPixelIndex++] = (byte)(40);
-                                    break;
-                                case 2:
-                                    this.depthPixels[colorPixelIndex++] = (byte)0;
-                                    this.depthPixels[colorPixelIndex++] = (byte)10;
-                                    this.depthPixels[colorPixelIndex++] = (byte)240;
-                                    break;
-                                case 3:
-                                    this.depthPixels[colorPixelIndex++] = (byte)10;
-                                    this.depthPixels[colorPixelIndex++] = (byte)200;
-                                    this.depthPixels[colorPixelIndex++] = (byte)200;
-                                    break;
-                                case 4:
-                                    this.depthPixels[colorPixelIndex++] = (byte)0;
-                                    this.depthPixels[colorPixelIndex++] = (byte)0;
-                                    this.depthPixels[colorPixelIndex++] = (byte)0;
-                                    break;
-                            }
-                        }
-                    }
-                    //this.depthPixels[colorPixelIndex++] = 255;
-                    colorPixelIndex++;
-
-                }
-
-                this.bitmap.Lock();
-                this.DisplayImage.Source = BitmapSource.Create(dfDescrip.Width, dfDescrip.Height, 96, 96, PixelFormats.Bgr32, null, depthPixels, dfDescrip.Width * PixelFormats.Bgr32.BitsPerPixel / 8);
-                //this.bitmap.WritePixels(new Int32Rect(0, 0, this.bitmap.PixelWidth, this.bitmap.PixelHeight), depthPixels, dfDescrip.Width * PixelFormats.Bgr32.BitsPerPixel / 8, 0);
-                //depthPixels.CopyTo(this.bitmap.PixelBuffer);
-                this.bitmap.Unlock();
-                //this.DisplayImage.Source = this.bitmap;
-
+                if(CurrentViewMode == ViewMode.Zones)
+                    DrawDepthZones(dfDescrip, minDepth, maxDepth);
             }
         }
 
@@ -331,6 +263,168 @@ namespace KinectServer
                     server.WebSocketServices.Broadcast(JsonConvert.SerializeObject(obj));
             }
         }
+        #endregion
+
+        #region Draws
+
+        struct RGBA
+        {
+            public byte r;
+            public byte g;
+            public byte b;
+            public byte a;
+        }
+
+        unsafe void DrawGlitchyBodyMask()
+        {
+            var bandWidth = 100;
+            for (int i = 0; i < colorDepthPoints.Length; i++)
+            {
+                var r = colorFrameData[i * 4 + 0];
+                var g = colorFrameData[i * 4 + 1];
+                var b = colorFrameData[i * 4 + 2];
+                var alpha = colorFrameData[i * 4 + 3];
+
+                var colorDepthPoint = colorDepthPoints[i];
+                if (colorDepthPoint.X >= 0 && colorDepthPoint.X < depthDescription.Width && colorDepthPoint.Y >= 0 && colorDepthPoint.Y < depthDescription.Height)
+                {
+                    var depthIndex = (int)(colorDepthPoint.X + 0.5f) + (int)(colorDepthPoint.Y + 0.5f) * depthDescription.Width;
+                    var biPoint = this.biFrameData[depthIndex];
+                    var depth = this.depthData[depthIndex];
+
+                    var converted = Convert.ToInt32(biPoint) * 10000;
+
+                    if(biPoint < (byte)this.bodies.Count)
+                    {
+
+                        var key = converted + depth / bandWidth;
+                        if(!depthColorMap.ContainsKey(key))
+                        {
+                            var rgba = new RGBA();
+                            rgba.r = r;
+                            rgba.g = g;
+                            rgba.b = b;
+                            rgba.a = alpha;
+
+                            depthColorMap.Add(key, rgba);
+                            this.depthPixels[depthIndex * 4 + 0] = r;
+                            this.depthPixels[depthIndex * 4 + 1] = g;
+                            this.depthPixels[depthIndex * 4 + 2] = b;
+                            this.depthPixels[depthIndex * 4 + 3] = alpha;
+                        }
+                        else
+                        {
+                            var color = depthColorMap[key];
+                            /*color.r = (byte)((color.r + r) / 2);
+                            color.g = (byte)((color.g + r) / 2);
+                            color.b = (byte)((color.b + r) / 2);
+                            color.a = (byte)((color.a + r) / 2);
+                            */
+
+                            this.depthPixels[depthIndex * 4 + 0] = color.r;
+                            this.depthPixels[depthIndex * 4 + 1] = color.g;
+                            this.depthPixels[depthIndex * 4 + 2] = color.b;
+                            this.depthPixels[depthIndex * 4 + 3] = color.a;
+                        }
+                    }
+                    else
+                    {
+                        this.depthPixels[depthIndex * 4 + 0] = r;
+                        this.depthPixels[depthIndex * 4 + 1] = g;
+                        this.depthPixels[depthIndex * 4 + 2] = b;
+                        this.depthPixels[depthIndex * 4 + 3] = alpha;
+                    }
+
+                }
+
+            }
+            DrawDepthPixels();
+        }
+
+        void DrawDepthZones(FrameDescription dfDescrip, ushort minDepth, ushort maxDepth)
+        {
+            int colorPixelIndex = 0;
+            int mapDepthToByte = maxDepth / 256;
+            // depthData is set
+            for (int i = 0; i < this.depthData.Length; i++)
+            {
+                ushort depth = depthData[i];
+
+                int intensity = depth >= 0 && depth <= maxDepth ? depth / mapDepthToByte : 0;
+
+
+                depth = depth >= 0 && depth <= maxDepth ? depth : (ushort)0;
+
+                if(biFrameData[i] < (byte)bodies.Count)
+                {
+                    if(!BassModifier)
+                    {
+                        var colors = getZoneColors(depth);
+                        this.depthPixels[colorPixelIndex++] = colors.Item1;
+                        this.depthPixels[colorPixelIndex++] = colors.Item2;
+                        this.depthPixels[colorPixelIndex++] = colors.Item3;
+                    }
+                    else
+                    {
+                        this.depthPixels[colorPixelIndex++] = (byte)intensity;
+                        this.depthPixels[colorPixelIndex++] = (byte)intensity;
+                        this.depthPixels[colorPixelIndex++] = (byte)intensity;
+                    }
+                }
+                else
+                {
+                    if(!BassModifier)
+                    {
+                        this.depthPixels[colorPixelIndex++] = (byte)intensity;
+                        this.depthPixels[colorPixelIndex++] = (byte)intensity;
+                        this.depthPixels[colorPixelIndex++] = (byte)intensity;
+                    }
+                    else
+                    {
+                        var colors = getZoneColors(depth);
+                        this.depthPixels[colorPixelIndex++] = colors.Item1;
+                        this.depthPixels[colorPixelIndex++] = colors.Item2;
+                        this.depthPixels[colorPixelIndex++] = colors.Item3;
+                    }
+                }
+                this.depthPixels[colorPixelIndex++] = 255;    // no alpha channel
+                //colorPixelIndex++;
+            }
+
+            DrawDepthPixels();
+
+        }
+
+        void DrawDepthPixels()
+        {
+            this.bitmap.Lock();
+            //this.DisplayImage.Source = BitmapSource.Create(dfDescrip.Width, dfDescrip.Height, 96, 96, PixelFormats.Bgr32, null, depthPixels, dfDescrip.Width * PixelFormats.Bgr32.BitsPerPixel / 8);
+            this.bitmap.WritePixels(new Int32Rect(0, 0, this.bitmap.PixelWidth, this.bitmap.PixelHeight), depthPixels, depthDescription.Width * PixelFormats.Bgra32.BitsPerPixel / 8, 0);
+            this.DisplayImage.Source = this.bitmap;
+            this.bitmap.Unlock();
+        }
+
+        Tuple<byte, byte, byte> getZoneColors(ushort depth)
+        {
+            int zone = depth / bandWidth;
+            switch ((zone % zones + offset) % zones)
+            {
+                case 0:
+                    return new Tuple<byte, byte, byte>(10, 200, 40);
+                case 1:
+                    return new Tuple<byte, byte, byte>(200, 200, 40);
+                case 2:
+                    return new Tuple<byte, byte, byte>(0, 10, 240);
+                case 3:
+                    return new Tuple<byte, byte, byte>(10, 200, 200);
+                case 4:
+                    return new Tuple<byte, byte, byte>(0, 0, 0);
+                default:
+                    return new Tuple<byte, byte, byte>(0, 0, 0);
+            }
+        }
+
+        #endregion
 
         private void Bass_Click(object sender, RoutedEventArgs e)
         {
