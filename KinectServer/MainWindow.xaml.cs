@@ -61,6 +61,8 @@ namespace KinectServer
 
         Tuple<byte, byte, byte> personColor = new Tuple<byte, byte, byte>(10, 200, 200);
 
+        Tile t = new Tile();
+
         int zones = 80;
         int bandWidth = 15;
 
@@ -374,34 +376,16 @@ namespace KinectServer
             var colorPixelIndex = 0;
 
             // depthData is set
+            // pass 1
             for (int i = 0; i < this.depthData.Length; i++)
             {
                 ushort depth = depthData[i];
 
-                if (i - width - 1 < 0 || i + width + 1 >= this.depthData.Length)
-                {
+                t.UpdateTile(i, this.biFrameData, width);
+                var sum = t.Sum((byte)bodies.Count);
 
-                    this.depthPixels[colorPixelIndex++] = (byte)0;
-                    this.depthPixels[colorPixelIndex++] = (byte)0;
-                    this.depthPixels[colorPixelIndex++] = (byte)0;
-                    this.depthPixels[colorPixelIndex++] = (byte)255;
-                    continue;
-                }
-
-                int sum = 0;
-                sum += biFrameData[i - width - 1] > threshold ? 0 : 1;
-                sum += biFrameData[i - width] > threshold ? 0 : 1;
-                sum += biFrameData[i - width + 1] > threshold ? 0 : 1;
-
-                sum += biFrameData[i - 1] > threshold ? 0 : 1;
-                sum += biFrameData[i + 1] > threshold ? 0 : 1;
-
-                sum += biFrameData[i + width - 1] > threshold ? 0 : 1;
-                sum += biFrameData[i + width] > threshold ? 0 : 1;
-                sum += biFrameData[i + width + 1] > threshold ? 0 : 1;
-                
-                if(sum < 8 && sum > 0)
-                {
+                if(sum > 0 && sum < 8)
+                { 
                     var color = getZoneColors(depth);
                     this.depthPixels[colorPixelIndex++] = (byte)color.Item1;
                     this.depthPixels[colorPixelIndex++] = (byte)color.Item2;
@@ -538,12 +522,48 @@ namespace KinectServer
 
     unsafe public class Tile
     {
-        Tile(byte*[] sourceArr, int index)
+        public Tile()
         {
-
+            this.tileBorder = new byte[8];
+            this.invalid = true;
         }
 
+        public bool invalid { get; set; }
+        public byte[] tileBorder { get; set; }
         public byte main { get; set; }
-        public byte*[] border { get; set; }
+
+        public void UpdateTile(int i, byte[] byteArr, int width)
+        {
+            if(i - width - 1 < 0 || i + width + 1 >= byteArr.Length)
+            {
+                this.invalid = true;
+                this.main = byteArr[i];
+                return;
+            }
+            this.invalid = false;
+
+            tileBorder[0] = byteArr[i - width - 1];
+            tileBorder[1] = byteArr[i - width];
+            tileBorder[2] = byteArr[i - width + 1];
+
+            tileBorder[3] = byteArr[i - 1];
+            tileBorder[4] = byteArr[i + 1];
+
+            tileBorder[5] = byteArr[i + width - 1];
+            tileBorder[6] = byteArr[i + width];
+            tileBorder[7] = byteArr[i + width + 1];
+        }
+
+        public int Sum(byte threshold)
+        {
+            if (this.invalid)
+                return -1;
+
+            int sum = 0;
+            foreach (byte b in this.tileBorder)
+                sum += b > threshold ? 1 : 0;
+
+            return sum;
+        }
     }
 }
