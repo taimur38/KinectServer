@@ -30,13 +30,14 @@ namespace KinectServer
     public enum ViewMode
     {
        Zones,
-       BodyMask 
+       BodyMask,
+       Outline
     }
 
     public partial class MainWindow : Window
     {
 
-        public ViewMode CurrentViewMode = ViewMode.Zones;
+        public ViewMode CurrentViewMode = ViewMode.Outline;
 
         public KinectSensor sensor = null;
         IList<Body> bodies = null;
@@ -56,8 +57,13 @@ namespace KinectServer
         WriteableBitmap bitmap = null;
 
         int offset = 0;
-        int zones = 4;
-        int bandWidth = 50;
+        int offsetMultiplier = 1;
+
+        Tuple<byte, byte, byte> personColor = new Tuple<byte, byte, byte>(10, 200, 200);
+
+        int zones = 80;
+        int bandWidth = 15;
+
         bool BassModifier = true;
 
         static Dictionary<int, RGBA> depthColorMap;
@@ -89,21 +95,27 @@ namespace KinectServer
             */
 
             // connect to ableton
-            /*using(var ws = new WebSocket("ws://localhost:8181"))
+            Task.Run(() =>
             {
-                ws.OnMessage += (sender, e) => {
+                var ws = new WebSocket("ws://192.168.1.130:1337");
+                ws.Connect();
+                ws.OnMessage += (sender, e) =>
+                {
+                    var note = int.Parse(e.Data);
                     Console.WriteLine(e.Data);
-                    if(bassModifier && e.Data.Bass) {
+                    if (note == 60)
+                    {
+                        BassModifier = !BassModifier;
                         offset++;
                     }
-                    else if(bassModifier && !e.Data.Bass) {
-                        bassModifier = false;
+                    else if (note != 60)
+                    {
+                        BassModifier = false;
                     }
-                }
+                };
                 ws.Connect();
                 ws.OnClose += (sender, e) => Console.WriteLine("websocket closed");
-            }
-            */
+            });
 
             depthColorMap = new Dictionary<int, RGBA>();
             sensor = KinectSensor.GetDefault();
@@ -140,9 +152,20 @@ namespace KinectServer
                 while(true)
                 {
                     if(this.BassModifier)
-                        offset++;
+                    {
+                        offset = offset + offsetMultiplier;
+                        //bandWidth = Math.Max((bandWidth + 3) % 30, 15);
+                    }
                     //bandWidth = rand.Next(30, 70);
                     Thread.Sleep(100);
+                }
+            });
+
+            Task.Run(() => {
+                while(true)
+                {
+                    bandWidth = bandWidth == 15 ? 50 : 15;
+                    Thread.Sleep(5000);
                 }
             });
 
@@ -214,6 +237,8 @@ namespace KinectServer
 
                 if(CurrentViewMode == ViewMode.Zones)
                     DrawDepthZones(dfDescrip, minDepth, maxDepth);
+                if (CurrentViewMode == ViewMode.Outline)
+                    DrawDepthOutline(dfDescrip);
             }
         }
 
@@ -341,6 +366,58 @@ namespace KinectServer
             DrawDepthPixels();
         }
 
+        void DrawDepthOutline(FrameDescription dfDescrip)
+        {
+
+            var width = dfDescrip.Width;
+            var threshold = (byte)bodies.Count;
+            var colorPixelIndex = 0;
+
+            // depthData is set
+            for (int i = 0; i < this.depthData.Length; i++)
+            {
+                ushort depth = depthData[i];
+
+                if (i - width - 1 < 0 || i + width + 1 >= this.depthData.Length)
+                {
+
+                    this.depthPixels[colorPixelIndex++] = (byte)0;
+                    this.depthPixels[colorPixelIndex++] = (byte)0;
+                    this.depthPixels[colorPixelIndex++] = (byte)0;
+                    this.depthPixels[colorPixelIndex++] = (byte)255;
+                    continue;
+                }
+
+                int sum = 0;
+                sum += biFrameData[i - width - 1] > threshold ? 0 : 1;
+                sum += biFrameData[i - width] > threshold ? 0 : 1;
+                sum += biFrameData[i - width + 1] > threshold ? 0 : 1;
+
+                sum += biFrameData[i - 1] > threshold ? 0 : 1;
+                sum += biFrameData[i + 1] > threshold ? 0 : 1;
+
+                sum += biFrameData[i + width - 1] > threshold ? 0 : 1;
+                sum += biFrameData[i + width] > threshold ? 0 : 1;
+                sum += biFrameData[i + width + 1] > threshold ? 0 : 1;
+                
+                if(sum < 8 && sum > 0)
+                {
+                    var color = getZoneColors(depth);
+                    this.depthPixels[colorPixelIndex++] = (byte)color.Item1;
+                    this.depthPixels[colorPixelIndex++] = (byte)color.Item2;
+                    this.depthPixels[colorPixelIndex++] = (byte)color.Item3;
+                }
+                else
+                {
+                    this.depthPixels[colorPixelIndex++] = (byte)0;
+                    this.depthPixels[colorPixelIndex++] = (byte)0;
+                    this.depthPixels[colorPixelIndex++] = (byte)0;
+                }
+                this.depthPixels[colorPixelIndex++] = (byte)255;
+            }
+            DrawDepthPixels();
+        }
+
         void DrawDepthZones(FrameDescription dfDescrip, ushort minDepth, ushort maxDepth)
         {
             int colorPixelIndex = 0;
@@ -352,6 +429,7 @@ namespace KinectServer
 
                 int intensity = depth >= 0 && depth <= maxDepth ? depth / mapDepthToByte : 0;
 
+                //return new Tuple<byte, byte, byte>(10, 200, 200);
 
                 depth = depth >= 0 && depth <= maxDepth ? depth : (ushort)0;
 
@@ -366,18 +444,23 @@ namespace KinectServer
                     }
                     else
                     {
-                        this.depthPixels[colorPixelIndex++] = (byte)intensity;
-                        this.depthPixels[colorPixelIndex++] = (byte)intensity;
-                        this.depthPixels[colorPixelIndex++] = (byte)intensity;
+                        this.depthPixels[colorPixelIndex++] = personColor.Item1;
+                        this.depthPixels[colorPixelIndex++] = personColor.Item2;
+                        this.depthPixels[colorPixelIndex++] = personColor.Item3;
                     }
                 }
                 else
                 {
                     if(!BassModifier)
                     {
+                        /*
                         this.depthPixels[colorPixelIndex++] = (byte)intensity;
                         this.depthPixels[colorPixelIndex++] = (byte)intensity;
                         this.depthPixels[colorPixelIndex++] = (byte)intensity;
+                        */
+                        this.depthPixels[colorPixelIndex++] = 0;
+                        this.depthPixels[colorPixelIndex++] = 0;
+                        this.depthPixels[colorPixelIndex++] = 0;
                     }
                     else
                     {
@@ -406,17 +489,22 @@ namespace KinectServer
 
         Tuple<byte, byte, byte> getZoneColors(ushort depth)
         {
+
             int zone = depth / bandWidth;
-            switch ((zone % zones + offset) % zones)
+            switch (((zone % zones + offset) % (zones / 4)))
             {
                 case 0:
-                    return new Tuple<byte, byte, byte>(10, 200, 40);
+                    return new Tuple<byte, byte, byte>(75, 75, 0);
+                    //return new Tuple<byte, byte, byte>(10, 200, 40);
                 case 1:
-                    return new Tuple<byte, byte, byte>(200, 200, 40);
+                    return new Tuple<byte, byte, byte>(0, 75, 200);
+                    //return new Tuple<byte, byte, byte>(200, 200, 40);
                 case 2:
-                    return new Tuple<byte, byte, byte>(0, 10, 240);
+                    return new Tuple<byte, byte, byte>(120, 75, 0);    // dark green thing?
+                    //return new Tuple<byte, byte, byte>(0, 10, 240);
                 case 3:
-                    return new Tuple<byte, byte, byte>(10, 200, 200);
+                    return new Tuple<byte, byte, byte>(240, 32, 160);       // purple
+                    //return new Tuple<byte, byte, byte>(10, 200, 200);
                 case 4:
                     return new Tuple<byte, byte, byte>(0, 0, 0);
                 default:
@@ -429,6 +517,8 @@ namespace KinectServer
         private void Bass_Click(object sender, RoutedEventArgs e)
         {
             this.BassModifier = !this.BassModifier;
+            zones = zones == 80 ? 4 * 4 : 80;
+            bandWidth = 50;
         }
     }
 
@@ -444,5 +534,16 @@ namespace KinectServer
             base.OnOpen();
             Sessions.Broadcast("hi");
         }
+    }
+
+    unsafe public class Tile
+    {
+        Tile(byte*[] sourceArr, int index)
+        {
+
+        }
+
+        public byte main { get; set; }
+        public byte*[] border { get; set; }
     }
 }
