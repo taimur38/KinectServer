@@ -37,7 +37,7 @@ namespace KinectServer
     public partial class MainWindow : Window
     {
 
-        public ViewMode CurrentViewMode = ViewMode.Outline;
+        public ViewMode CurrentViewMode = ViewMode.Zones;
 
         public KinectSensor sensor = null;
         IList<Body> bodies = null;

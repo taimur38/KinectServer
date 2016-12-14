@@ -5,13 +5,14 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:KinectServer"
         mc:Ignorable="d"
+        Background="Black"
         Title="MainWindow" Height="1080" Width="1920">
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="70" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
-        <Button Grid.Row="0" Name="Bass" Content="Toggle Bass" Click="Bass_Click" Visibility="Visible" Width="400"/>
+        <Button Grid.Row="0" Name="Bass" Content="Toggle Bass" Click="Bass_Click" Visibility="Visible" Width="400" Background="Black" BorderBrush="White" BorderThickness="4" Foreground="White"/>
         <Image Grid.Row="1" Name="DisplayImage" Visibility="Visible" Stretch="Uniform"/>
     </Grid>
 </Window>
