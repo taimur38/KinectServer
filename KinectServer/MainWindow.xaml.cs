@@ -59,16 +59,60 @@ namespace KinectServer
         int offset = 0;
         int offsetMultiplier = 1;
 
-        Tuple<byte, byte, byte> personColor = new Tuple<byte, byte, byte>(10, 200, 200);
-
         Tile t = new Tile();
 
-        int zones = 80;
-        int bandWidth = 15;
+        int zones = 4;
+        int bandWidth = 120;
+
+        int colorModeOffset = 0;
 
         bool BassModifier = true;
 
+
+        bool justBodies = false;
+
         static Dictionary<int, RGBA> depthColorMap;
+
+        static RGBA[] colorSetA = new RGBA[] {
+            new RGBA { r = 10, g = 200, b = 40, a = 255 },
+            new RGBA { r = 200, g = 200, b = 40, a = 255 },
+            new RGBA { r = 0, g = 10, b = 240, a = 255 },
+            new RGBA { r = 10, g = 200, b = 200, a = 255 }
+        };
+
+        static RGBA[] colorSetB = new RGBA[]
+        {
+            new RGBA { r = 75, g = 75, b = 0, a = 255 },
+            new RGBA { r = 0, g = 75, b = 200, a = 255 },
+            new RGBA { r = 120, g = 75, b = 0, a = 255 },
+            new RGBA { r = 240, g = 32, b = 160, a = 255 },
+        };
+
+        static RGBA[] colorSetC = new RGBA[]
+        {
+            new RGBA { r = 160, g = 12, b = 70, a = 255 },
+            new RGBA { r = 170, g = 20, b = 90, a = 255 },
+            new RGBA { r = 190, g = 30, b = 110, a = 255 },
+            new RGBA { r = 220, g = 50, b = 130, a = 255 },
+        };
+
+        static RGBA[] colorSetD = new RGBA[]
+        {
+            new RGBA { b = 160, r = 12, g = 70, a = 255 },
+            new RGBA { b = 170, r = 20, g = 90, a = 255 },
+            new RGBA { b = 190, r = 30, g = 110, a = 255 },
+            new RGBA { b = 220, r = 50, g = 130, a = 255 },
+        };
+
+        static RGBA[] colorSetE = new RGBA[]
+        {
+            new RGBA { g = 160, b = 12, r = 70, a = 255 },
+            new RGBA { g = 170, b = 20, r = 90, a = 255 },
+            new RGBA { g = 190, b = 30, r = 110, a = 255 },
+            new RGBA { g = 220, b = 50, r = 130, a = 255 },
+        };
+
+        RGBA[][] colorSets = new RGBA[][] { colorSetA, colorSetB, colorSetC, colorSetD, colorSetE };
 
         public MainWindow()
         {
@@ -99,21 +143,39 @@ namespace KinectServer
             // connect to ableton
             Task.Run(() =>
             {
-                var ws = new WebSocket("ws://192.168.1.130:1337");
+                var ws = new WebSocket("ws://192.168.1.150:1337");
                 ws.Connect();
                 ws.OnMessage += (sender, e) =>
                 {
                     var note = int.Parse(e.Data);
-                    Console.WriteLine(e.Data);
-                    if (note == 60)
+                    Console.WriteLine("RECEIVED MESSAGE");
+                    Console.WriteLine(note);
+                    if(note <= 4)
                     {
+                        colorModeOffset = note;
+                    }
+
+                    if(note == 5)
+                    {
+                        bandWidth = bandWidth == 120 ? 40 : 120;
+                    }
+
+                    if(note == 6)
+                    {
+                        //justBodies = !justBodies;
                         BassModifier = !BassModifier;
+                    }
+
+                    /*if (note == 60)
+                    {
+                        bassmodifier = !bassmodifier;
                         offset++;
                     }
                     else if (note != 60)
                     {
-                        BassModifier = false;
+                        bassmodifier = false;
                     }
+                    */
                 };
                 ws.Connect();
                 ws.OnClose += (sender, e) => Console.WriteLine("websocket closed");
@@ -153,23 +215,35 @@ namespace KinectServer
 
                 while(true)
                 {
-                    if(this.BassModifier)
-                    {
-                        offset = offset + offsetMultiplier;
+                    //if(this.BassModifier)
+                    ///{
+                    offset = offset + offsetMultiplier;
                         //bandWidth = Math.Max((bandWidth + 3) % 30, 15);
-                    }
+                    //}
                     //bandWidth = rand.Next(30, 70);
-                    Thread.Sleep(100);
+                    Thread.Sleep(300);
                 }
             });
 
-            Task.Run(() => {
+            /*
+            Task.Run(() =>
+            {
+                while (true)
+                {
+                    colorModeOffset++;
+                    Thread.Sleep(5000);
+                }
+            });
+            */
+
+            /*Task.Run(() => {
                 while(true)
                 {
                     bandWidth = bandWidth == 15 ? 50 : 15;
                     Thread.Sleep(5000);
                 }
             });
+            */
 
             // start websocket server
             this.server = new WebSocketServer("ws://localhost:8181");
@@ -387,9 +461,9 @@ namespace KinectServer
                 if(sum > 0 && sum < 8)
                 { 
                     var color = getZoneColors(depth);
-                    this.depthPixels[colorPixelIndex++] = (byte)color.Item1;
-                    this.depthPixels[colorPixelIndex++] = (byte)color.Item2;
-                    this.depthPixels[colorPixelIndex++] = (byte)color.Item3;
+                    this.depthPixels[colorPixelIndex++] = (byte)color.r;
+                    this.depthPixels[colorPixelIndex++] = (byte)color.g;
+                    this.depthPixels[colorPixelIndex++] = (byte)color.b;
                 }
                 else
                 {
@@ -415,22 +489,23 @@ namespace KinectServer
 
                 //return new Tuple<byte, byte, byte>(10, 200, 200);
 
-                depth = depth >= 0 && depth <= maxDepth ? depth : (ushort)0;
+                depth = depth >= 0 && depth <= maxDepth ? depth : (ushort) 0;
 
+                var personColor = getPersonColors((int)biFrameData[i]);
                 if(biFrameData[i] < (byte)bodies.Count)
                 {
                     if(!BassModifier)
                     {
                         var colors = getZoneColors(depth);
-                        this.depthPixels[colorPixelIndex++] = colors.Item1;
-                        this.depthPixels[colorPixelIndex++] = colors.Item2;
-                        this.depthPixels[colorPixelIndex++] = colors.Item3;
+                        this.depthPixels[colorPixelIndex++] = colors.r;
+                        this.depthPixels[colorPixelIndex++] = colors.g;
+                        this.depthPixels[colorPixelIndex++] = colors.b;
                     }
                     else
                     {
-                        this.depthPixels[colorPixelIndex++] = personColor.Item1;
-                        this.depthPixels[colorPixelIndex++] = personColor.Item2;
-                        this.depthPixels[colorPixelIndex++] = personColor.Item3;
+                        this.depthPixels[colorPixelIndex++] = personColor.r;
+                        this.depthPixels[colorPixelIndex++] = personColor.g;
+                        this.depthPixels[colorPixelIndex++] = personColor.b;
                     }
                 }
                 else
@@ -449,9 +524,9 @@ namespace KinectServer
                     else
                     {
                         var colors = getZoneColors(depth);
-                        this.depthPixels[colorPixelIndex++] = colors.Item1;
-                        this.depthPixels[colorPixelIndex++] = colors.Item2;
-                        this.depthPixels[colorPixelIndex++] = colors.Item3;
+                        this.depthPixels[colorPixelIndex++] = colors.r;
+                        this.depthPixels[colorPixelIndex++] = colors.g;
+                        this.depthPixels[colorPixelIndex++] = colors.b;
                     }
                 }
                 this.depthPixels[colorPixelIndex++] = 255;    // no alpha channel
@@ -471,29 +546,28 @@ namespace KinectServer
             this.bitmap.Unlock();
         }
 
-        Tuple<byte, byte, byte> getZoneColors(ushort depth)
+        RGBA getZoneColors(ushort depth)
         {
 
             int zone = depth / bandWidth;
-            switch (((zone % zones + offset) % (zones / 4)))
-            {
-                case 0:
-                    return new Tuple<byte, byte, byte>(75, 75, 0);
-                    //return new Tuple<byte, byte, byte>(10, 200, 40);
-                case 1:
-                    return new Tuple<byte, byte, byte>(0, 75, 200);
-                    //return new Tuple<byte, byte, byte>(200, 200, 40);
-                case 2:
-                    return new Tuple<byte, byte, byte>(120, 75, 0);    // dark green thing?
-                    //return new Tuple<byte, byte, byte>(0, 10, 240);
-                case 3:
-                    return new Tuple<byte, byte, byte>(240, 32, 160);       // purple
-                    //return new Tuple<byte, byte, byte>(10, 200, 200);
-                case 4:
-                    return new Tuple<byte, byte, byte>(0, 0, 0);
-                default:
-                    return new Tuple<byte, byte, byte>(0, 0, 0);
-            }
+            //switch (((zone % zones + offset) % (zones / 4)))
+            if (depth == 0)
+                return new RGBA
+                {
+                    r = 0,
+                    g = 0,
+                    b = 0,
+                    a = 0
+                };
+
+            var colorSet = colorSets[colorModeOffset % (colorSets.Length-1)];
+            return colorSet[(zone + offset % zones) % (colorSet.Length-1)];
+        }
+
+        RGBA getPersonColors(int index)
+        {
+            var colorSet = colorSets[colorModeOffset % (colorSets.Length-1)];
+            return colorSet[index % (colorSets.Length-1)];
         }
 
         #endregion
@@ -501,8 +575,8 @@ namespace KinectServer
         private void Bass_Click(object sender, RoutedEventArgs e)
         {
             this.BassModifier = !this.BassModifier;
-            zones = zones == 80 ? 4 * 4 : 80;
-            bandWidth = 50;
+            //zones = zones == 80 ? 4 * 4 : 80;
+            //bandWidth = 50;
         }
     }
 
