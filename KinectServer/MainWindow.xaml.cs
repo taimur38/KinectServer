@@ -68,6 +68,8 @@ namespace KinectServer
 
         bool BassModifier = true;
 
+        int prevBodies = 0;
+
 
         bool justBodies = false;
 
@@ -141,6 +143,8 @@ namespace KinectServer
             */
 
             // connect to ableton
+
+            /*
             Task.Run(() =>
             {
                 var ws = new WebSocket("ws://192.168.1.150:1337");
@@ -175,11 +179,11 @@ namespace KinectServer
                     {
                         bassmodifier = false;
                     }
-                    */
                 };
                 ws.Connect();
                 ws.OnClose += (sender, e) => Console.WriteLine("websocket closed");
             });
+            */
 
             depthColorMap = new Dictionary<int, RGBA>();
             sensor = KinectSensor.GetDefault();
@@ -246,7 +250,7 @@ namespace KinectServer
             */
 
             // start websocket server
-            this.server = new WebSocketServer("ws://localhost:8181");
+            this.server = new WebSocketServer("ws://0.0.0.0:8181");
             server.AddWebSocketService<ServerThing>("/kinect", () => new ServerThing(sensor));
 
             Task.Run(() =>
@@ -327,6 +331,20 @@ namespace KinectServer
 
                 frame.GetAndRefreshBodyData(this.bodies);
 
+                int count = this.bodies.Count(x => x.IsTracked);
+
+                if(count != this.prevBodies)
+                {
+                    if(count == 0 || this.prevBodies == 0)
+                    {
+                        Console.WriteLine("broadcasting!!!");
+                        this.server.WebSocketServices.Broadcast(count.ToString());
+                    }
+                }
+                this.prevBodies = count;
+                //this.server.WebSocketServices.Broadcast(this.bodies.Count.ToString());
+
+                /*
                 bool atleastOne = false;
 
                 dynamic obj = new ExpandoObject();
@@ -362,6 +380,7 @@ namespace KinectServer
 
                 if(atleastOne)
                     server.WebSocketServices.Broadcast(JsonConvert.SerializeObject(obj));
+            */
             }
         }
         #endregion
@@ -592,6 +611,7 @@ namespace KinectServer
             base.OnOpen();
             Sessions.Broadcast("hi");
         }
+
     }
 
     unsafe public class Tile
